@@ -1,0 +1,39 @@
+# Rust / Cargo
+**/target/
+**/*.rs.bk
+
+# Flutter / Dart
+**/.dart_tool/
+**/build/
+**/.packages
+**/.pub-cache/
+**/.pub/
+**/pubspec.lock
+
+# Flutter - Plataforma Android
+**/android/.gradle/
+**/android/local.properties
+**/android/**/GeneratedPluginRegistrant.java
+**/android/**/*.keystore
+**/android/**/*.jks
+
+# Flutter - Plataforma Linux
+**/linux/flutter/ephemeral/
+
+# Modelos LLM y pesos locales
+*.gguf
+*.bin
+models/
+
+# Entorno y credenciales
+.env
+*.local
+
+# Editores y sistema operativo
+.vscode/
+.antigravity/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
