@@ -1,0 +1,54 @@
+use ort::session::{builder::GraphOptimizationLevel, Session};
+use ort::value::Value;
+use std::error::Error;
+use std::path::Path;
+use tokenizers::Tokenizer;
+
+pub struct OnnxEncoder {
+    tokenizer: Tokenizer,
+    session: Session,
+}
+
+impl OnnxEncoder {
+    // Inicializacion del tokenizador y sesion ONNX Runtime
+    pub fn new<P: AsRef<Path>>(onnx_path: P, tokenizer_path: P) -> Result<Self, Box<dyn Error>> {
+        let tokenizer = Tokenizer::from_file(tokenizer_path)
+            .map_err(|e| format!("Error cargando tokenizer: {e}"))?;
+
+        let env = ort::init().with_name("engine").build()?;
+
+        let session = Session::builder(&env)?
+            .with_optimization_level(GraphOptimizationLevel::Level3)?
+            .with_intra_threads(4)?
+            .commit_from_file(onnx_path)?;
+
+        Ok(Self { tokenizer, session })
+    }
+
+    // Inferencia del modelo y extraccion de vector f32
+    pub fn encode(&mut self, text: &str) -> Result<Vec<f32>, Box<dyn Error>> {
+        let encoding = self
+            .tokenizer
+            .encode(text, true)
+            .map_err(|e| format!("Error al tokenizar: {e}"))?;
+
+        let seq_len = encoding.get_ids().len();
+        let input_ids: Vec<i64> = encoding.get_ids().iter().map(|&x| x as i64).collect();
+        let attention_mask: Vec<i64> = encoding
+            .get_attention_mask()
+            .iter()
+            .map(|&x| x as i64)
+            .collect();
+
+        let ids_tensor = Value::from_array(([1usize, seq_len], input_ids))?;
+        let mask_tensor = Value::from_array(([1usize, seq_len], attention_mask))?;
+
+        let outputs = self.session.run(ort::inputs![
+            "input_ids" => ids_tensor,
+            "attention_mask" => mask_tensor,
+        ])?;
+
+        let (_shape, data) = outputs["sentence_embedding"].try_extract_tensor::<f32>()?;
+        Ok(data.to_vec())
+    }
+}

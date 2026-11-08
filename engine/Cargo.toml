@@ -1,0 +1,23 @@
+[package]
+name = "engine"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "engine"
+crate-type = ["rlib", "cdylib"]
+
+[[bin]]
+name = "cli"
+path = "src/bin/cli.rs"
+
+[dependencies]
+ndarray = "0.17"
+ort = { version = "2.0.0-rc.15", features = ["download-binaries", "ndarray", "copy-dylibs", "tls-rustls"] }
+rusqlite = { version = "0.32", features = ["bundled"] }
+tokenizers = { version = "0.20", default-features = false, features = ["onig"] }
+
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
