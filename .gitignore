@@ -37,3 +37,6 @@ models/
 *.swo
 *~
 .DS_Store
+
+# Personal
+old*
