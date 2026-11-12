@@ -35,8 +35,8 @@ impl SearchEngine {
         Ok(Self { encoder, index, db })
     }
 
-    // Ejecucion del pipeline completo de consulta semantica
-    pub fn search(&mut self, query: &str, top_k: usize) -> Result<Vec<SearchHit>, Box<dyn Error>> {
+    // Ejecucion inmutable y concurrente del pipeline completo de consulta semantica
+    pub fn search(&self, query: &str, top_k: usize) -> Result<Vec<SearchHit>, Box<dyn Error>> {
         let q_vec = self.encoder.encode(query)?;
         let top_rows = self.index.search_top_k(&q_vec, top_k);
 

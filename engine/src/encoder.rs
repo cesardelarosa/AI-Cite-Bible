@@ -2,11 +2,12 @@ use ort::session::{builder::GraphOptimizationLevel, Session};
 use ort::value::Value;
 use std::error::Error;
 use std::path::Path;
+use std::sync::Mutex;
 use tokenizers::Tokenizer;
 
 pub struct OnnxEncoder {
     tokenizer: Tokenizer,
-    session: Session,
+    session: Mutex<Session>,
 }
 
 impl OnnxEncoder {
@@ -22,11 +23,14 @@ impl OnnxEncoder {
             .with_intra_threads(4)?
             .commit_from_file(onnx_path)?;
 
-        Ok(Self { tokenizer, session })
+        Ok(Self {
+            tokenizer,
+            session: Mutex::new(session),
+        })
     }
 
-    // Inferencia del modelo y extraccion de vector f32
-    pub fn encode(&mut self, text: &str) -> Result<Vec<f32>, Box<dyn Error>> {
+    // Inferencia inmutable y thread-safe del modelo y extracción de vector f32
+    pub fn encode(&self, text: &str) -> Result<Vec<f32>, Box<dyn Error>> {
         let encoding = self
             .tokenizer
             .encode(text, true)
@@ -43,7 +47,12 @@ impl OnnxEncoder {
         let ids_tensor = Value::from_array(([1usize, seq_len], input_ids))?;
         let mask_tensor = Value::from_array(([1usize, seq_len], attention_mask))?;
 
-        let outputs = self.session.run(ort::inputs![
+        let mut session = self
+            .session
+            .lock()
+            .map_err(|e| format!("Error bloqueando sesión ONNX: {e}"))?;
+
+        let outputs = session.run(ort::inputs![
             "input_ids" => ids_tensor,
             "attention_mask" => mask_tensor,
         ])?;

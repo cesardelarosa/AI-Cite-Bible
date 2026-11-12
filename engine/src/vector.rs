@@ -1,7 +1,8 @@
+use memmap2::Mmap;
 use std::cmp::{Ordering, Reverse};
 use std::collections::BinaryHeap;
 use std::fs::File;
-use std::io::{self, Read};
+use std::io;
 use std::path::Path;
 
 pub const EMBEDDING_DIM: usize = 384;
@@ -27,45 +28,84 @@ impl Ord for ScoredRow {
 }
 
 pub struct VectorIndex {
-    data: Vec<f32>,
+    mmap: Mmap,
     num_rows: usize,
 }
 
 impl VectorIndex {
-    // Carga de la matriz binaria f32 en memoria contigua
+    /// Carga e indexa la matriz binaria mapeándola en memoria virtual (Zero-Copy).
+    ///
+    /// Valida que:
+    /// 1. El puntero base cumpla la alineación estricta de `f32` (4 bytes).
+    /// 2. La longitud del archivo sea múltiplo exacto de `EMBEDDING_DIM * sizeof(f32)`.
     pub fn from_file<P: AsRef<Path>>(path: P) -> io::Result<Self> {
-        let mut file = File::open(path)?;
-        let byte_len = file.metadata()?.len() as usize;
+        let file = File::open(path)?;
+        // SAFETY: Mapeo de solo lectura respaldado por el archivo.
+        let mmap = unsafe { memmap2::MmapOptions::new().map(&file)? };
+        let byte_len = mmap.len();
 
-        if byte_len % (EMBEDDING_DIM * std::mem::size_of::<f32>()) != 0 {
+        let float_size = std::mem::size_of::<f32>();
+        let float_align = std::mem::align_of::<f32>();
+
+        // Verificación de alineación a 4 bytes requerida para castear a &[f32]
+        let base_ptr = mmap.as_ptr() as usize;
+        if base_ptr % float_align != 0 {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidData,
-                "El tamano del binario no es multiplo exacto de 384 floats",
+                format!(
+                    "El puntero base de mmap ({:#x}) no cumple la alineación requerida de {} bytes para f32",
+                    base_ptr, float_align
+                ),
             ));
         }
 
-        let num_floats = byte_len / std::mem::size_of::<f32>();
+        let row_bytes = EMBEDDING_DIM * float_size;
+        if byte_len % row_bytes != 0 {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!(
+                    "El tamaño del binario ({} bytes) no es múltiplo exacto de una fila de {} floats ({} bytes)",
+                    byte_len, EMBEDDING_DIM, row_bytes
+                ),
+            ));
+        }
+
+        let num_floats = byte_len / float_size;
         let num_rows = num_floats / EMBEDDING_DIM;
-        let mut data = vec![0.0f32; num_floats];
 
-        let raw_slice = unsafe {
-            std::slice::from_raw_parts_mut(data.as_mut_ptr() as *mut u8, byte_len)
-        };
-        file.read_exact(raw_slice)?;
+        Ok(Self { mmap, num_rows })
+    }
 
-        Ok(Self { data, num_rows })
+    /// Retorna una vista de slice inmutable &[f32] con tiempo de vida ligado a la estructura.
+    #[inline]
+    pub fn as_slice(&self) -> &[f32] {
+        let num_floats = self.num_rows * EMBEDDING_DIM;
+        // SAFETY:
+        // - mmap garantiza memoria válida y continua durante el tiempo de vida de `self`.
+        // - Se verificó la alineación a 4 bytes y la longitud en `from_file`.
+        unsafe {
+            std::slice::from_raw_parts(self.mmap.as_ptr() as *const f32, num_floats)
+        }
     }
 
     // Busqueda de los K vectores con mayor similitud de coseno
     pub fn search_top_k(&self, query: &[f32], k: usize) -> Vec<ScoredRow> {
-        assert_eq!(query.len(), EMBEDDING_DIM);
+        assert_eq!(
+            query.len(),
+            EMBEDDING_DIM,
+            "La dimensión de la consulta ({}) debe ser {}",
+            query.len(),
+            EMBEDDING_DIM
+        );
+
         if k == 0 || self.num_rows == 0 {
             return Vec::new();
         }
 
+        let data = self.as_slice();
         let mut heap: BinaryHeap<Reverse<ScoredRow>> = BinaryHeap::with_capacity(k + 1);
 
-        for (row_id, row_slice) in self.data.chunks_exact(EMBEDDING_DIM).enumerate() {
+        for (row_id, row_slice) in data.chunks_exact(EMBEDDING_DIM).enumerate() {
             let score = dot_product_384(row_slice, query);
 
             if heap.len() < k {
@@ -85,6 +125,10 @@ impl VectorIndex {
 
     pub fn len(&self) -> usize {
         self.num_rows
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.num_rows == 0
     }
 }
 
