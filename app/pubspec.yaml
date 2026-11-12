@@ -1,0 +1,27 @@
+name: ai_bible_cite_meditation
+description: Motor offline de búsqueda bíblica semántica y meditación contemplativa (Zero-Network).
+publish_to: "none"
+version: 0.1.0+1
+
+environment:
+  sdk: ">=3.3.0 <4.0.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  ffi: ^2.1.3
+  path: ^1.9.0
+  path_provider: ^2.1.4
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/data/canon.db
+    - assets/data/embeddings_384_f32.bin
+    - assets/models/encoder_int8.onnx
+    - assets/models/tokenizer.json
