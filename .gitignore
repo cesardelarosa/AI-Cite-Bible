@@ -40,3 +40,29 @@ models/
 
 # Personal
 old*
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+
+# Flutter y Dart (generados en tiempo de build)
+app/.dart_tool/
+app/build/
+app/.flutter-plugins
+app/.flutter-plugins-dependencies
+app/.packages
+app/.pub-cache/
+app/.pub/
+app/linux/flutter/ephemeral/
+
+# Android (generados por Gradle/NDK)
+app/android/.gradle/
+app/android/local.properties
+app/android/app/build/
+app/android/app/src/main/jniLibs/
+
+# Artefactos duplicados de Flutter (evita subir 180 MB y superar el límite de 100 MB de GitHub)
+app/assets/data/
+app/assets/models/
