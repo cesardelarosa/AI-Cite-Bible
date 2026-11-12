@@ -1,7 +1,8 @@
 use rusqlite::{params, Connection, Result as SqlResult};
+use serde::Serialize;
 use std::path::Path;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct VerseRecord {
     pub row_id: usize,
     pub canonical_id: String,

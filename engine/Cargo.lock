@@ -206,6 +206,8 @@ dependencies = [
  "ndarray",
  "ort",
  "rusqlite",
+ "serde",
+ "serde_json",
  "tokenizers",
 ]
 

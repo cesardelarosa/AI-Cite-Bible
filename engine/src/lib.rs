@@ -1,14 +1,16 @@
 pub mod db;
 pub mod encoder;
+pub mod ffi;
 pub mod vector;
 
 use db::{CorpusDb, VerseRecord};
 use encoder::OnnxEncoder;
+use serde::Serialize;
 use std::error::Error;
 use std::path::Path;
 use vector::VectorIndex;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct SearchHit {
     pub score: f32,
     pub verse: VerseRecord,
