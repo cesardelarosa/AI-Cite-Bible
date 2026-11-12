@@ -149,7 +149,3 @@ app/android/app/src/main/jniLibs/arm64-v8a/libonnxruntime.so
 
 * **Código fuente:** GPLv3 (orientado al ecosistema de software libre y F-Droid).
 * **Corpus canónico:** Reina-Valera 1909 (Dominio Público).
-
-```
-
-```
