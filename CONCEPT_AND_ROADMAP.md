@@ -74,17 +74,15 @@ UI Flutter ──> dart:ffi ──> engine.so (C-ABI) ──> Citas + Respirador
 
 * [x] **Fase 0: Pipeline de Datos y Artefactos** (Python, ONNX Runtime, SQLite).
 * [x] **Fase 1: Motor de Cómputo Local en Rust** (`memmap2`, SIMD, Top-K Heap, CLI de benchmark).
-* [ ] **Fase 2: Capa FFI y Compilación Cruzada**
+* [x] **Fase 2: Capa FFI y Compilación Cruzada**
 * [x] Diseño de funciones C-ABI y serialización JSON.
-* [ ] Compilación para Android (`aarch64-linux-android`) con `cargo-ndk`.
+* [x] Compilación para Android (`aarch64-linux-android`) con `cargo-ndk`.
 
 
-* [ ] **Fase 3: Aplicación Cliente (Flutter)**
-* [ ] Bindings `dart:ffi`.
-* [ ] Gestor de assets (copia a `getApplicationDocumentsDirectory` en arranque inicial).
-* [ ] UI de respiración con `AnimationController` y `HapticFeedback`.
+* [x] **Fase 3: Aplicación Cliente (Flutter)**
+* [x] Bindings `dart:ffi`.
+* [x] Gestor de assets (copia a `getApplicationDocumentsDirectory` en arranque inicial).
+* [x] UI de respiración con `AnimationController` y `HapticFeedback`.
 
 
 * [ ] **Fase 4: Empaquetado y Distribución** (Receta F-Droid, APK firmado y validación Zero-Network).
-
-```
