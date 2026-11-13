@@ -26,8 +26,10 @@ flutter analyze --no-fatal-infos
 flutter test
 ```
 
-Para generar APK `arm64-v8a` en release (requiere `libengine.so` y `libonnxruntime.so` en `android/app/src/main/jniLibs/arm64-v8a/`):
+Para generar el APK `arm64-v8a` en release de forma completa (compila `libengine.so`, descarga `libonnxruntime.so` si falta y aplica la firma de `android/key.properties`), ejecuta desde la raíz del repositorio:
 
 ```bash
-flutter build apk --release --target-platform android-arm64
+./build_android_apk.sh
 ```
+
+*(O manualmente dentro de `app/` si `android/app/src/main/jniLibs/arm64-v8a/` ya contiene ambos `.so`: `flutter build apk --release --target-platform android-arm64`.)*
