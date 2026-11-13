@@ -46,6 +46,31 @@ pub unsafe extern "C" fn engine_init(
     }
 }
 
+/// Devuelve los metadatos del corpus activo (`CorpusInfo`) serializados en JSON.
+///
+/// El puntero `*mut c_char` devuelto debe liberarse con [`engine_free_string`].
+/// Retorna `NULL` si `engine` es nulo o falla la serialización.
+///
+/// # Safety
+/// `engine` debe ser nulo o un puntero válido devuelto por [`engine_init`] y no destruido.
+#[no_mangle]
+pub unsafe extern "C" fn engine_corpus_info(engine: *const SearchEngine) -> *mut c_char {
+    if engine.is_null() {
+        return ptr::null_mut();
+    }
+
+    let engine_ref = &*engine;
+    let result = catch_unwind(AssertUnwindSafe(|| {
+        let json = serde_json::to_string(engine_ref.corpus_info()).ok()?;
+        CString::new(json).ok()
+    }));
+
+    match result {
+        Ok(Some(c_str)) => c_str.into_raw(),
+        Ok(None) | Err(_) => ptr::null_mut(),
+    }
+}
+
 /// Ejecuta una búsqueda semántica inmutable sobre `&(*engine)` y serializa el resultado a JSON.
 ///
 /// Retorna un puntero `*mut c_char` terminado en `\0` que debe liberarse con [`engine_free_string`],
@@ -70,7 +95,6 @@ pub unsafe extern "C" fn engine_search(
     };
 
     let engine_ref = &*engine;
-    // Acota `top_k` para evitar desbordamiento en `k + 1` dentro de `VectorIndex::search_top_k`.
     let safe_top_k = top_k.min(100_000);
 
     let result = catch_unwind(AssertUnwindSafe(|| {
@@ -85,12 +109,14 @@ pub unsafe extern "C" fn engine_search(
     }
 }
 
-/// Libera una cadena JSON asignada previamente por [`engine_search`] mediante `CString::from_raw`.
+/// Libera una cadena JSON asignada previamente por [`engine_search`] o [`engine_corpus_info`]
+/// mediante `CString::from_raw`.
 ///
 /// No realiza ninguna operación si `ptr` es `NULL`.
 ///
 /// # Safety
-/// Si `ptr` no es nulo, debe haber sido devuelto por [`engine_search`] y no liberado previamente.
+/// Si `ptr` no es nulo, debe haber sido devuelto por Rust vía `CString::into_raw`
+/// y no haberse liberado previamente.
 #[no_mangle]
 pub unsafe extern "C" fn engine_free_string(ptr: *mut c_char) {
     if ptr.is_null() {
@@ -105,7 +131,7 @@ pub unsafe extern "C" fn engine_free_string(ptr: *mut c_char) {
 ///
 /// # Safety
 /// Si `engine` no es nulo, debe haber sido devuelto por [`engine_init`], no debe haber llamadas activas
-/// a [`engine_search`] sobre él y no debe haber sido destruido previamente.
+/// sobre él y no debe haber sido destruido previamente.
 #[no_mangle]
 pub unsafe extern "C" fn engine_destroy(engine: *mut SearchEngine) {
     if engine.is_null() {
@@ -117,8 +143,9 @@ pub unsafe extern "C" fn engine_destroy(engine: *mut SearchEngine) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::db::VerseRecord;
+    use crate::db::PassageRecord;
     use crate::SearchHit;
+    use serde_json::json;
 
     #[test]
     fn null_pointers_are_handled_safely() {
@@ -138,6 +165,7 @@ mod tests {
                 engine_init(valid.as_ptr(), valid.as_ptr(), valid.as_ptr(), ptr::null()).is_null()
             );
 
+            assert!(engine_corpus_info(ptr::null()).is_null());
             assert!(engine_search(ptr::null(), valid.as_ptr(), 5).is_null());
             assert!(engine_search(ptr::null(), ptr::null(), 5).is_null());
 
@@ -164,23 +192,24 @@ mod tests {
     fn search_hit_serializes_to_expected_json_and_frees_string() {
         let hits = vec![SearchHit {
             score: 0.95,
-            verse: VerseRecord {
+            passage: PassageRecord {
                 row_id: 42,
-                canonical_id: "PSA.23.1".to_string(),
-                book_name: "Salmos".to_string(),
-                testament: "AT".to_string(),
-                chapter: 23,
-                verse: 1,
+                source_id: "Sal 23:1".to_string(),
+                title: "Salmos 23:1".to_string(),
+                collection: "Salmos".to_string(),
+                group_name: "Antiguo Testamento".to_string(),
                 text: "Jehová es mi pastor; nada me faltará.".to_string(),
+                metadata: json!({"chapter": 23, "verse": 1}),
             },
         }];
 
-        let json = serde_json::to_string(&hits).expect("serialization should succeed");
-        let parsed: serde_json::Value = serde_json::from_str(&json).expect("valid JSON");
-        assert_eq!(parsed[0]["verse"]["canonical_id"], "PSA.23.1");
-        assert_eq!(parsed[0]["verse"]["chapter"], 23);
+        let json_str = serde_json::to_string(&hits).expect("serialization should succeed");
+        let parsed: serde_json::Value = serde_json::from_str(&json_str).expect("valid JSON");
+        assert_eq!(parsed[0]["passage"]["source_id"], "Sal 23:1");
+        assert_eq!(parsed[0]["passage"]["title"], "Salmos 23:1");
+        assert_eq!(parsed[0]["passage"]["metadata"]["chapter"], 23);
 
-        let raw = CString::new(json).unwrap().into_raw();
+        let raw = CString::new(json_str).unwrap().into_raw();
         unsafe {
             engine_free_string(raw);
         }

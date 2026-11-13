@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import 'core/engine/engine_models.dart';
 import 'core/engine/engine_worker.dart';
 import 'core/storage/asset_bootstrap.dart';
 import 'presentation/search_screen.dart';
@@ -17,11 +18,11 @@ void main() {
       systemNavigationBarIconBrightness: Brightness.light,
     ),
   );
-  runApp(const BibleMeditationApp());
+  runApp(const CiteMeditationApp());
 }
 
-class BibleMeditationApp extends StatelessWidget {
-  const BibleMeditationApp({super.key});
+class CiteMeditationApp extends StatelessWidget {
+  const CiteMeditationApp({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -35,7 +36,7 @@ class BibleMeditationApp extends StatelessWidget {
     );
 
     return MaterialApp(
-      title: 'Quietud · Citas Bíblicas',
+      title: 'Quietud',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         useMaterial3: true,
@@ -60,9 +61,9 @@ class _AppBootstrapGateState extends State<_AppBootstrapGate> {
   final AssetBootstrap _bootstrap = AssetBootstrap();
   final EngineWorker _worker = EngineWorker();
 
-  bool _isReady = false;
+  CorpusInfo? _corpusInfo;
   String? _error;
-  String _statusMessage = 'Preparando el santuario offline...';
+  String _statusMessage = 'Preparando entorno offline...';
   double? _progress;
 
   @override
@@ -79,7 +80,7 @@ class _AppBootstrapGateState extends State<_AppBootstrapGate> {
 
   Future<void> _initializeEngine() async {
     setState(() {
-      _isReady = false;
+      _corpusInfo = null;
       _error = null;
       _progress = null;
       _statusMessage = 'Verificando artefactos locales...';
@@ -108,14 +109,14 @@ class _AppBootstrapGateState extends State<_AppBootstrapGate> {
         _statusMessage = 'Cargando modelo neuronal e índice vectorial...';
       });
 
-      await _worker.init(paths);
+      final info = await _worker.init(paths);
 
       if (!mounted) {
         return;
       }
 
       setState(() {
-        _isReady = true;
+        _corpusInfo = info;
       });
     } catch (err) {
       if (!mounted) {
@@ -129,8 +130,12 @@ class _AppBootstrapGateState extends State<_AppBootstrapGate> {
 
   @override
   Widget build(BuildContext context) {
-    if (_isReady) {
-      return SearchScreen(engineWorker: _worker);
+    final info = _corpusInfo;
+    if (info != null) {
+      return SearchScreen(
+        engineWorker: _worker,
+        corpusInfo: info,
+      );
     }
 
     return Scaffold(

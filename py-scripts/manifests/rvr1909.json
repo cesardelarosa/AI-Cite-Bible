@@ -1,0 +1,15 @@
+{
+  "corpus_id": "rvr1909",
+  "title": "QUIETUD · RVR 1909",
+  "subtitle": "¿Qué habita en tu ánimo hoy?",
+  "search_hint": "Describe una emoción, carga o inquietud...",
+  "version": "1.0.0",
+  "language": "es",
+  "model_name": "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2",
+  "sample_queries": [
+    "ansiedad y temor por el futuro",
+    "cansancio del alma y falta de paz",
+    "gratitud en medio de la prueba",
+    "necesito perdonar"
+  ]
+}

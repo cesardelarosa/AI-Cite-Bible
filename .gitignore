@@ -13,9 +13,11 @@
 # Flutter - Plataforma Android
 **/android/.gradle/
 **/android/local.properties
+**/android/key.properties
 **/android/**/GeneratedPluginRegistrant.java
 **/android/**/*.keystore
 **/android/**/*.jks
+**/*.p12
 
 # Flutter - Plataforma Linux
 **/linux/flutter/ephemeral/

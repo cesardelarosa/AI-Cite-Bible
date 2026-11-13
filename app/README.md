@@ -1,17 +1,33 @@
-# ai_bible_cite_meditation
+# Quietud — Cliente Flutter Offline
 
-A new Flutter project.
+Aplicación cliente en Flutter para búsqueda semántica offline y meditación guiada mediante respiración rítmica (`4·4·4·4` y `4·4·4`) conectada al motor nativo Rust vía `dart:ffi`.
 
-## Getting Started
+## Arquitectura del cliente
 
-This project is a starting point for a Flutter application.
+* [`lib/core/engine/engine_ffi.dart`](lib/core/engine/engine_ffi.dart): carga dinámica de `libengine.so` (Linux y Android `arm64-v8a` con precarga de `libonnxruntime.so`) y enlaces C-ABI (`engine_init`, `engine_corpus_info`, `engine_search`, `engine_free_string`, `engine_destroy`).
+* [`lib/core/engine/engine_worker.dart`](lib/core/engine/engine_worker.dart): *Worker Isolate* persistente para no bloquear la UI ni violar las garantías `Send`/`Sync` de SQLite y ONNX Runtime.
+* [`lib/core/storage/asset_bootstrap.dart`](lib/core/storage/asset_bootstrap.dart): extracción incremental por bloques hacia `getApplicationDocumentsDirectory()` con versionado independiente para encoder y corpus.
+* [`lib/presentation/search_screen.dart`](lib/presentation/search_screen.dart) y [`lib/presentation/meditation_screen.dart`](lib/presentation/meditation_screen.dart): interfaz minimalista adaptada dinámicamente desde `corpus_meta`.
 
-A few resources to get you started if this is your first Flutter project:
+## Comandos útiles
 
-- [Learn Flutter](https://docs.flutter.dev/get-started/learn-flutter)
-- [Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Flutter learning resources](https://docs.flutter.dev/reference/learning-resources)
+Desde la raíz del repositorio:
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+```bash
+./setup_assets.sh
+./run_desktop.sh
+```
+
+Para análisis y tests dentro de `app/`:
+
+```bash
+cd app
+flutter analyze --no-fatal-infos
+flutter test
+```
+
+Para generar APK `arm64-v8a` en release (requiere `libengine.so` y `libonnxruntime.so` en `android/app/src/main/jniLibs/arm64-v8a/`):
+
+```bash
+flutter build apk --release --target-platform android-arm64
+```

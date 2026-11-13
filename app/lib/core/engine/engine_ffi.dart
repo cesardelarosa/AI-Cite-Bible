@@ -22,6 +22,13 @@ typedef EngineInitDart = NativeEngineHandle Function(
   Pointer<Utf8> tokenizerPath,
 );
 
+typedef _EngineCorpusInfoNative = Pointer<Utf8> Function(
+  NativeEngineHandle engine,
+);
+typedef EngineCorpusInfoDart = Pointer<Utf8> Function(
+  NativeEngineHandle engine,
+);
+
 typedef _EngineSearchNative = Pointer<Utf8> Function(
   NativeEngineHandle engine,
   Pointer<Utf8> query,
@@ -44,12 +51,10 @@ typedef EngineDestroyDart = void Function(NativeEngineHandle engine);
 /// Esta clase debe usarse exclusivamente dentro del Worker Isolate dedicado,
 /// ya que `SearchEngine` contiene una conexión `rusqlite::Connection` (`!Sync`).
 class EngineFfi {
-  /// Carga la librería compartida nativa y resuelve los 4 símbolos C exportados.
+  /// Carga la librería compartida nativa y resuelve los símbolos C exportados.
   factory EngineFfi.open() {
     try {
       if (Platform.isAndroid) {
-        // Con `ort` en modo `load-dynamic`, precargamos `libonnxruntime.so` en el
-        // namespace del proceso antes de inicializar la sesión ONNX en Rust.
         _preloadOnnxRuntimeAndroid();
         return EngineFfi._(DynamicLibrary.open('libengine.so'));
       }
@@ -74,20 +79,25 @@ class EngineFfi {
     );
   }
 
-  EngineFfi._(this._library)
+  EngineFfi._(DynamicLibrary library)
       : _engineInit =
-            _library.lookupFunction<_EngineInitNative, EngineInitDart>('engine_init'),
+            library.lookupFunction<_EngineInitNative, EngineInitDart>('engine_init'),
+        _engineCorpusInfo = library.providesSymbol('engine_corpus_info')
+            ? library.lookupFunction<_EngineCorpusInfoNative, EngineCorpusInfoDart>(
+                'engine_corpus_info',
+              )
+            : null,
         _engineSearch =
-            _library.lookupFunction<_EngineSearchNative, EngineSearchDart>('engine_search'),
+            library.lookupFunction<_EngineSearchNative, EngineSearchDart>('engine_search'),
         _engineFreeString =
-            _library.lookupFunction<_EngineFreeStringNative, EngineFreeStringDart>(
+            library.lookupFunction<_EngineFreeStringNative, EngineFreeStringDart>(
           'engine_free_string',
         ),
         _engineDestroy =
-            _library.lookupFunction<_EngineDestroyNative, EngineDestroyDart>('engine_destroy');
+            library.lookupFunction<_EngineDestroyNative, EngineDestroyDart>('engine_destroy');
 
-  final DynamicLibrary _library;
   final EngineInitDart _engineInit;
+  final EngineCorpusInfoDart? _engineCorpusInfo;
   final EngineSearchDart _engineSearch;
   final EngineFreeStringDart _engineFreeString;
   final EngineDestroyDart _engineDestroy;
@@ -130,7 +140,6 @@ class EngineFfi {
       }
     }
 
-    // Respaldo final mediante el cargador dinámico del sistema (LD_LIBRARY_PATH, /usr/lib64, etc.).
     try {
       return DynamicLibrary.open('libengine.so');
     } on ArgumentError catch (err) {
@@ -141,7 +150,7 @@ class EngineFfi {
       'No se pudo cargar libengine.so en Linux. '
       'Compila el motor con "cargo build --release" en engine/ o define ENGINE_LIB_PATH. '
       'Rutas comprobadas: ${candidates.join(', ')}',
-      cause: lastLoadError?.toString(),
+      cause: lastLoadError.toString(),
     );
   }
 
@@ -166,7 +175,6 @@ class EngineFfi {
     addCandidate(p.join(cwd, '..', 'engine', 'target', 'debug', 'libengine.so'));
     addCandidate(p.join(cwd, 'engine', 'target', 'debug', 'libengine.so'));
 
-    // Sube desde el ejecutable (p. ej. app/build/linux/x64/debug/bundle/) hasta la raíz del repo.
     var dir = Directory(exeDir);
     for (var depth = 0; depth < 7; depth++) {
       addCandidate(p.join(dir.path, 'engine', 'target', 'release', 'libengine.so'));
@@ -203,6 +211,25 @@ class EngineFfi {
       calloc.free(binPtr);
       calloc.free(onnxPtr);
       calloc.free(tokPtr);
+    }
+  }
+
+  /// Obtiene los metadatos del corpus activo en JSON, si el símbolo está disponible.
+  String? corpusInfoJson(NativeEngineHandle engine) {
+    final fn = _engineCorpusInfo;
+    if (fn == null || engine == nullptr) {
+      return null;
+    }
+
+    final resultPtr = fn(engine);
+    if (resultPtr == nullptr) {
+      return null;
+    }
+
+    try {
+      return resultPtr.toDartString();
+    } finally {
+      _engineFreeString(resultPtr);
     }
   }
 

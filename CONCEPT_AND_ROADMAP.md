@@ -1,14 +1,16 @@
-# Concepto y Hoja de Ruta: Motor de Búsqueda y Meditación Bíblica Offline
+# Concepto y Hoja de Ruta: Quietud — Motor Citador Semántico Offline
 
 ## 1. Concepto y Visión
 
 ### 1.1. Propósito
-Desarrollo de una herramienta cliente de meditación contemplativa y oración basada en el canon bíblico. El usuario introduce una situación vital, emoción o inquietud en lenguaje natural y la aplicación recupera pasajes bíblicos afines para anclar un ejercicio de respiración rítmica y reflexión (Como tal parte de una idea personal de empezar a trastear con lo que llamo modelos puramente citadores, es decir que solo devuelven referencias a un texto que ha sido procesado, no es que a mi me flipe la biblia o no, sino que lo vi el ejemplo mas claro con el que trabajar y ya que estoy quiero hacer un mvp).
+Desarrollo de **Quietud**, una aplicación cliente de meditación contemplativa y recuperación textual determinista basada en un **Core Citador genérico**. El usuario introduce una situación vital, emoción o inquietud en lenguaje natural y la aplicación recupera pasajes literales afines para anclar un ejercicio de respiración rítmica y reflexión.
+
+Aunque el primer corpus de referencia (MVP) es el canon bíblico de dominio público de la Reina-Valera 1909 (31.102 versículos), la arquitectura está desacoplada mediante el esquema `corpus_meta` + `passages` para reutilizar el motor con cualquier otro dominio textual (filosofía, literatura clásica, legislación o notas personales).
 
 ### 1.2. Principios de Diseño
 - **Zero-Network / Privacidad Criptográfica:** La aplicación carece del permiso `android.permission.INTERNET`. Ningún dato, telemetría o consulta sale del dispositivo.
-- **Recuperación Determinista (Cero Alucinaciones):** Paradigma de "Modelo Citador" (*Dense Retrieval*) sobre un corpus cerrado de 31.102 versículos canónicos de la Reina-Valera 1909 (dominio público).
-- **Baja Latencia y Eficiencia:** La inferencia vectorial y la búsqueda matricial se ejecutan en $< 10\text{ ms}$ en CPU móvil estándar con huella de RAM mínima vía `mmap`.
+- **Recuperación Determinista (Cero Alucinaciones):** Paradigma de "Modelo Citador" (*Dense Retrieval*) sobre un corpus cerrado (31.102 versículos canónicos de la Reina-Valera 1909 en el MVP).
+- **Baja Latencia y Eficiencia:** La inferencia vectorial y la búsqueda matricial se ejecutan localmente con latencias de pocos milisegundos y huella de RAM mínima vía `mmap`.
 - **Ecosistema Open Source:** Doble licenciamiento (GPLv3 para F-Droid y distribución comunitaria; comercial/pago en tiendas oficiales).
 
 ---
@@ -17,21 +19,22 @@ Desarrollo de una herramienta cliente de meditación contemplativa y oración ba
 
 ```text
 [ PIPELINE OFFLINE (Python) - COMPLETADO ]
-data/bible_canonical.json ──> py-scripts/01_generate_corpus_and_vectors.py ──> data/embeddings_384_f32.bin (47.7 MB)
-                                                                           ──> data/canon.db (SQLite, 6.4 MB)
-models/ (HuggingFace)     ──> py-scripts/02_export_onnx_pipeline.py        ──> models/encoder_int8.onnx (112.7 MB)
-                                                                           ──> models/tokenizer.json (17.1 MB)
+Corpus fuente (JSON / MD / CSV) ──> py-scripts/adapters/* + build_corpus.py
+                                    ├──> embeddings_384_f32.bin (~46 MB, L2 norm)
+                                    └──> canon.db (SQLite: corpus_meta + passages)
+Modelo HuggingFace               ──> py-scripts/02_export_onnx_pipeline.py
+                                    ├──> encoder_int8.onnx (~113 MB)
+                                    └──> tokenizer.json (~17 MB)
 
-[ RUNTIME NATIVO (Rust Engine) - VALIDADO EN CLI (~4.5 ms) ]
+[ RUNTIME NATIVO (Rust Engine) - COMPLETADO ]
 Input texto ──> tokenizers (HuggingFace Rust) ──> IDs y máscara
-            ──> ort::Session (INT8, Mean Pooling + L2 embebidos) ──> q en R^384
+            ──> ort::Session (INT8, Mean Pooling + L2 embebidos) ──> q en R^N
             ──> memmap2 (Zero-Copy) + Producto escalar SIMD (M · q)
             ──> BinaryHeap Top-K (O(N log K))
-            ──> rusqlite O(1) por row_id contra canon.db ──> Top Hits
+            ──> rusqlite O(1) por row_id contra passages ──> JSON (C-ABI FFI)
 
-[ CLIENTE (Flutter) - EN DESARROLLO ]
-UI Flutter ──> dart:ffi ──> engine.so (C-ABI) ──> Citas + Respirador háptico
-
+[ CLIENTE (Flutter Desktop & Android) - VALIDADO EN ESCRITORIO ]
+UI Flutter ──> Worker Isolate (dart:ffi) ──> libengine.so ──> Citas + Respirador háptico
 ```
 
 ---
@@ -40,14 +43,15 @@ UI Flutter ──> dart:ffi ──> engine.so (C-ABI) ──> Citas + Respirador
 
 | Componente | Ruta en repositorio | Estado | Especificación Técnica |
 | --- | --- | --- | --- |
-| **Base de Datos** | `data/canon.db` | **Terminado** | SQLite 6.4 MB, 31.102 filas (`row_id` 0..31101 = Gen 1:1..Apo 22:21). |
+| **Base de Datos** | `data/canon.db` | **Terminado** | SQLite ~9.9 MB, esquema universal `corpus_meta` + `passages` (31.102 filas RVR1909). |
 | **Matriz de Embeddings** | `data/embeddings_384_f32.bin` | **Terminado** | 47.772.672 bytes exactos ($31.102 \times 384 \times 4\text{ B}$). Norma $L_2 = 1.0$. |
-| **Modelo ONNX** | `models/encoder_int8.onnx` | **Terminado** | 112.7 MB. INT8 dinámico con *Mean Pooling* y normalización $L_2$ dentro del grafo. |
-| **Tokenizador** | `models/tokenizer.json` | **Terminado** | 17.1 MB (vocabulario XLM-RoBERTa de 250k tokens). |
+| **Modelo ONNX** | `models/encoder_int8.onnx` | **Terminado** | ~113 MB. INT8 dinámico con *Mean Pooling* y normalización $L_2$ dentro del grafo. |
+| **Tokenizador** | `models/tokenizer.json` | **Terminado** | ~17 MB (vocabulario XLM-RoBERTa de 250k tokens). |
+| **Pipeline y Adaptadores** | `py-scripts/` (`build_corpus.py`, `adapters/`) | **Terminado** | Ingesta genérica desde RVR1909, Markdown y CSV/JSON/JSONL. |
 | **Motor Rust Core** | `engine/src/` (`lib`, `vector`, `encoder`, `db`) | **Terminado** | SIMD, `memmap2` con comprobación de alineación a 4 bytes, `Mutex<Session>` sobre `&self`. |
-| **CLI de Validación** | `engine/src/bin/cli.rs` | **Terminado** | Resolución dinámica de rutas (`--root`, env vars, `current_exe`). Latencia real: **3.8 - 5.6 ms**. |
-| **Capa FFI** | `engine/src/ffi.rs` | **En progreso** | C-ABI (`engine_init`, `engine_search`, `engine_destroy`, `engine_free_string`). |
-| **App Móvil** | `app/` | **Pendiente** | Flutter + `dart:ffi` + copia de assets a almacenamiento interno en primer arranque. |
+| **CLI de Validación** | `engine/src/bin/cli.rs` | **Terminado** | Resolución dinámica de rutas (`--root`, flags, env vars `ENGINE_*`). |
+| **Capa FFI** | `engine/src/ffi.rs` | **Terminado** | C-ABI (`engine_init`, `engine_corpus_info`, `engine_search`, `engine_free_string`, `engine_destroy`). |
+| **App Cliente (Flutter)** | `app/` | **Validado en Linux** | Worker Isolate + `dart:ffi`, extracción atómica de assets y UI dinámica (`Quietud`). |
 
 ---
 
@@ -85,4 +89,4 @@ UI Flutter ──> dart:ffi ──> engine.so (C-ABI) ──> Citas + Respirador
     * [x] UI de respiración con `AnimationController` y `HapticFeedback`.
 
 
-* [ ] **Fase 4: Empaquetado y Distribución** (Receta F-Droid, APK firmado y validación Zero-Network).
+* [ ] **Fase 4: Empaquetado y Distribución** (APK `arm64-v8a` firmado, GitHub Release, receta F-Droid y validación Zero-Network en dispositivo físico).

@@ -1,0 +1,6 @@
+# Copia este archivo como app/android/key.properties (ignorado por Git)
+# y sustituye los valores por los de tu keystore real de publicación.
+storePassword=CAMBIAR_PASSWORD_KEYSTORE
+keyPassword=CAMBIAR_PASSWORD_CLAVE
+keyAlias=quietud
+storeFile=upload-keystore.jks

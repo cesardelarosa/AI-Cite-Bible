@@ -60,7 +60,8 @@ class EngineWorker {
   StreamSubscription<dynamic>? _errorSub;
   StreamSubscription<dynamic>? _exitSub;
 
-  Future<void>? _initFuture;
+  Future<CorpusInfo>? _initFuture;
+  CorpusInfo? _corpusInfo;
   bool _initialized = false;
   bool _disposed = false;
 
@@ -68,29 +69,34 @@ class EngineWorker {
 
   bool get isInitialized => _initialized && !_disposed;
   bool get isDisposed => _disposed;
+  CorpusInfo? get corpusInfo => _corpusInfo;
 
-  /// Arranca el Worker Isolate (si no está vivo) e inicializa el motor nativo.
-  Future<void> init(EngineArtifactPaths paths) {
+  /// Arranca el Worker Isolate (si no está vivo), inicializa el motor nativo
+  /// y devuelve los metadatos del corpus activo (`CorpusInfo`).
+  Future<CorpusInfo> init(EngineArtifactPaths paths) {
     if (_disposed) {
-      return Future<void>.error(
+      return Future<CorpusInfo>.error(
         const EngineException('No se puede inicializar un EngineWorker ya liberado.'),
       );
     }
-    if (_initialized && _workerPort != null) {
-      return Future<void>.value();
+    if (_initialized && _workerPort != null && _corpusInfo != null) {
+      return Future<CorpusInfo>.value(_corpusInfo!);
     }
     return _initFuture ??= _performInit(paths);
   }
 
-  Future<void> _performInit(EngineArtifactPaths paths) async {
+  Future<CorpusInfo> _performInit(EngineArtifactPaths paths) async {
     try {
       await _ensureIsolateSpawned();
-      await _sendCommand<Object?>(
+      final info = await _sendCommand<CorpusInfo>(
         (replyPort) => InitCommand(paths, replyPort),
       );
+      _corpusInfo = info;
       _initialized = true;
+      return info;
     } catch (err) {
       _initFuture = null;
+      _corpusInfo = null;
       _initialized = false;
       rethrow;
     }
@@ -123,6 +129,7 @@ class EngineWorker {
     }
     _disposed = true;
     _initialized = false;
+    _corpusInfo = null;
 
     final workerPort = _workerPort;
     if (workerPort != null) {
@@ -191,7 +198,7 @@ class EngineWorker {
         readyPort.sendPort,
         onError: errorPort.sendPort,
         onExit: exitPort.sendPort,
-        debugName: 'BibleEngineWorker',
+        debugName: 'SemanticEngineWorker',
       );
       _workerPort = await handshakeCompleter.future.timeout(
         const Duration(seconds: 10),
@@ -317,7 +324,13 @@ void _workerEntryPoint(SendPort hostReadyPort) {
           }
           ffi ??= EngineFfi.open();
           engineHandle = ffi!.init(message.paths);
-          message.replyPort.send(const _SuccessReply(null));
+
+          final infoJson = ffi!.corpusInfoJson(engineHandle);
+          final info = infoJson != null
+              ? CorpusInfo.fromJson(jsonDecode(infoJson) as Map<String, dynamic>)
+              : CorpusInfo.fallback();
+
+          message.replyPort.send(_SuccessReply(info));
         } catch (err) {
           message.replyPort.send(
             _ErrorReply('Error inicializando el motor nativo.', err.toString()),

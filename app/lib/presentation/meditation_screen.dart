@@ -113,7 +113,6 @@ class _MeditationScreenState extends State<MeditationScreen>
     }
 
     final value = _controller.value;
-    // Detecta el reinicio de ciclo en `repeat()` (de ~1.0 a ~0.0).
     if (value < _lastValue && mounted) {
       setState(() {
         _completedCycles++;
@@ -264,7 +263,7 @@ class _MeditationScreenState extends State<MeditationScreen>
 
   @override
   Widget build(BuildContext context) {
-    final verse = widget.hit.verse;
+    final passage = widget.hit.passage;
 
     return Scaffold(
       backgroundColor: _bgColor,
@@ -276,10 +275,10 @@ class _MeditationScreenState extends State<MeditationScreen>
               padding: const EdgeInsets.symmetric(horizontal: 26, vertical: 16),
               child: Column(
                 children: <Widget>[
-                  _buildTopBar(verse),
+                  _buildTopBar(passage),
                   const Spacer(flex: 2),
                   Text(
-                    verse.reference,
+                    passage.title,
                     textAlign: TextAlign.center,
                     style: const TextStyle(
                       fontFamily: 'serif',
@@ -291,7 +290,7 @@ class _MeditationScreenState extends State<MeditationScreen>
                   ),
                   const SizedBox(height: 18),
                   Text(
-                    '«${verse.text}»',
+                    '«${passage.text}»',
                     textAlign: TextAlign.center,
                     style: const TextStyle(
                       fontFamily: 'serif',
@@ -328,7 +327,7 @@ class _MeditationScreenState extends State<MeditationScreen>
     );
   }
 
-  Widget _buildTopBar(VerseRecord verse) {
+  Widget _buildTopBar(PassageRecord passage) {
     return Row(
       children: <Widget>[
         IconButton(
@@ -342,7 +341,7 @@ class _MeditationScreenState extends State<MeditationScreen>
         ),
         const Spacer(),
         Text(
-          verse.canonicalId,
+          passage.sourceId,
           style: const TextStyle(
             color: Color(0xFF6B6760),
             fontSize: 11.5,
@@ -486,7 +485,6 @@ class _BreathingRingPainter extends CustomPainter {
     final minRadius = size.width * 0.23;
     final currentRadius = minRadius + (maxRadius - minRadius) * expansion;
 
-    // Halo exterior muy tenue
     final outerFill = Paint()
       ..color = Color.fromRGBO(
         200,
@@ -497,7 +495,6 @@ class _BreathingRingPainter extends CustomPainter {
       ..style = PaintingStyle.fill;
     canvas.drawCircle(center, currentRadius, outerFill);
 
-    // Anillo geométrico principal
     final ringPaint = Paint()
       ..color = Color.fromRGBO(
         200,
@@ -509,7 +506,6 @@ class _BreathingRingPainter extends CustomPainter {
       ..strokeWidth = 1.25;
     canvas.drawCircle(center, currentRadius, ringPaint);
 
-    // Anillo guía exterior fijo (referencia visual suave)
     final guidePaint = Paint()
       ..color = const Color.fromRGBO(224, 224, 224, 0.08)
       ..style = PaintingStyle.stroke

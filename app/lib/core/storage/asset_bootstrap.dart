@@ -22,81 +22,152 @@ class AssetBootstrapProgress {
   final double fraction;
 }
 
-class _AssetSpec {
-  const _AssetSpec({
+/// Especificación del encoder compartido entre distintos corpus.
+class EncoderAssetSpec {
+  const EncoderAssetSpec({
+    this.onnxAssetKey = 'assets/models/encoder_int8.onnx',
+    this.tokenizerAssetKey = 'assets/models/tokenizer.json',
+    this.onnxFileName = 'encoder_int8.onnx',
+    this.tokenizerFileName = 'tokenizer.json',
+    this.version = 'encoder_v1',
+  });
+
+  final String onnxAssetKey;
+  final String tokenizerAssetKey;
+  final String onnxFileName;
+  final String tokenizerFileName;
+  final String version;
+}
+
+/// Especificación de un pack de corpus (SQLite + matriz binaria f32).
+class CorpusAssetSpec {
+  const CorpusAssetSpec({
+    this.corpusId = 'rvr1909',
+    this.dbAssetKey = 'assets/data/canon.db',
+    this.vectorsAssetKey = 'assets/data/embeddings_384_f32.bin',
+    this.dbFileName = 'canon.db',
+    this.vectorsFileName = 'embeddings_384_f32.bin',
+    this.version = 'rvr1909_v2',
+  });
+
+  final String corpusId;
+  final String dbAssetKey;
+  final String vectorsAssetKey;
+  final String dbFileName;
+  final String vectorsFileName;
+  final String version;
+}
+
+class _AssetCopyTask {
+  const _AssetCopyTask({
     required this.assetKey,
-    required this.fileName,
+    required this.targetFile,
+    required this.versionMarker,
+    required this.expectedVersion,
   });
 
   final String assetKey;
-  final String fileName;
+  final File targetFile;
+  final File versionMarker;
+  final String expectedVersion;
+
+  String get displayName => p.basename(targetFile.path);
 }
 
-/// Extrae de forma segura e incremental los 4 artefactos binarios desde el APK
-/// hacia `getApplicationDocumentsDirectory()` para que `memmap2` y SQLite puedan
-/// abrirlos con rutas absolutas del sistema de archivos.
+/// Extrae de forma incremental y desacoplada los artefactos del modelo (compartido)
+/// y del corpus (intercambiable por `corpusId`) hacia `getApplicationDocumentsDirectory()`.
 class AssetBootstrap {
   AssetBootstrap({
     AssetBundle? bundle,
-    this.assetsVersion = defaultAssetsVersion,
+    this.encoderSpec = const EncoderAssetSpec(),
+    this.corpusSpec = const CorpusAssetSpec(),
     this.chunkSizeBytes = defaultChunkSizeBytes,
   }) : _bundle = bundle ?? rootBundle;
 
-  /// Incrementa este identificador cuando cambie `canon.db`, los vectores o el modelo ONNX.
-  static const String defaultAssetsVersion = 'rvr1909_v1';
   static const int defaultChunkSizeBytes = 1024 * 1024; // 1 MiB por bloque
-  static const String _versionMarkerFileName = '.engine_assets_version';
-
-  static const List<_AssetSpec> _artifacts = <_AssetSpec>[
-    _AssetSpec(
-      assetKey: 'assets/data/canon.db',
-      fileName: 'canon.db',
-    ),
-    _AssetSpec(
-      assetKey: 'assets/data/embeddings_384_f32.bin',
-      fileName: 'embeddings_384_f32.bin',
-    ),
-    _AssetSpec(
-      assetKey: 'assets/models/encoder_int8.onnx',
-      fileName: 'encoder_int8.onnx',
-    ),
-    _AssetSpec(
-      assetKey: 'assets/models/tokenizer.json',
-      fileName: 'tokenizer.json',
-    ),
-  ];
 
   final AssetBundle _bundle;
-  final String assetsVersion;
+  final EncoderAssetSpec encoderSpec;
+  final CorpusAssetSpec corpusSpec;
   final int chunkSizeBytes;
 
-  /// Verifica la existencia y versión de los 4 artefactos, copiando por bloques
-  /// únicamente cuando falte algún archivo o cambie `assetsVersion`.
+  /// Verifica y extrae por bloques tanto el encoder como el corpus activo.
+  ///
+  /// Solo vuelve a copiar un bloque (encoder o corpus) si falta alguno de sus
+  /// archivos o si cambia su `version` independiente.
   Future<EngineArtifactPaths> ensureReady({
     void Function(AssetBootstrapProgress progress)? onProgress,
   }) async {
     final docsDir = await getApplicationDocumentsDirectory();
-    if (!await docsDir.exists()) {
-      await docsDir.create(recursive: true);
-    }
 
-    final versionMarker = File(p.join(docsDir.path, _versionMarkerFileName));
-    final versionMatches = await _isVersionCurrent(versionMarker);
+    final modelsDir = Directory(p.join(docsDir.path, 'engine', 'models'));
+    final corpusDir = Directory(
+      p.join(docsDir.path, 'engine', 'corpora', corpusSpec.corpusId),
+    );
+    await modelsDir.create(recursive: true);
+    await corpusDir.create(recursive: true);
 
-    final totalFiles = _artifacts.length;
-    var anyCopied = false;
+    final corpusVersionFile = File(p.join(corpusDir.path, '.corpus_version'));
+    final encoderVersionFile = File(p.join(modelsDir.path, '.encoder_version'));
+
+    final dbFile = File(p.join(corpusDir.path, corpusSpec.dbFileName));
+    final binFile = File(p.join(corpusDir.path, corpusSpec.vectorsFileName));
+    final onnxFile = File(p.join(modelsDir.path, encoderSpec.onnxFileName));
+    final tokFile = File(p.join(modelsDir.path, encoderSpec.tokenizerFileName));
+
+    final tasks = <_AssetCopyTask>[
+      _AssetCopyTask(
+        assetKey: corpusSpec.dbAssetKey,
+        targetFile: dbFile,
+        versionMarker: corpusVersionFile,
+        expectedVersion: corpusSpec.version,
+      ),
+      _AssetCopyTask(
+        assetKey: corpusSpec.vectorsAssetKey,
+        targetFile: binFile,
+        versionMarker: corpusVersionFile,
+        expectedVersion: corpusSpec.version,
+      ),
+      _AssetCopyTask(
+        assetKey: encoderSpec.onnxAssetKey,
+        targetFile: onnxFile,
+        versionMarker: encoderVersionFile,
+        expectedVersion: encoderSpec.version,
+      ),
+      _AssetCopyTask(
+        assetKey: encoderSpec.tokenizerAssetKey,
+        targetFile: tokFile,
+        versionMarker: encoderVersionFile,
+        expectedVersion: encoderSpec.version,
+      ),
+    ];
+
+    final corpusVersionCurrent =
+        await _isVersionCurrent(corpusVersionFile, corpusSpec.version);
+    final encoderVersionCurrent =
+        await _isVersionCurrent(encoderVersionFile, encoderSpec.version);
+
+    var copiedCorpus = false;
+    var copiedEncoder = false;
+    final totalFiles = tasks.length;
 
     for (var i = 0; i < totalFiles; i++) {
-      final spec = _artifacts[i];
-      final targetFile = File(p.join(docsDir.path, spec.fileName));
-      final alreadyValid =
-          versionMatches && await targetFile.exists() && await targetFile.length() > 0;
+      final task = tasks[i];
+      final isCorpusTask = i < 2;
+      final groupVersionOk = isCorpusTask ? corpusVersionCurrent : encoderVersionCurrent;
+      final alreadyValid = groupVersionOk &&
+          await task.targetFile.exists() &&
+          await task.targetFile.length() > 0;
 
       if (!alreadyValid) {
-        anyCopied = true;
+        if (isCorpusTask) {
+          copiedCorpus = true;
+        } else {
+          copiedEncoder = true;
+        }
         await _copyAssetInChunks(
-          spec: spec,
-          targetFile: targetFile,
+          assetKey: task.assetKey,
+          targetFile: task.targetFile,
           onChunkProgress: (fileFraction) {
             if (onProgress == null) {
               return;
@@ -106,7 +177,7 @@ class AssetBootstrap {
               AssetBootstrapProgress(
                 currentIndex: i + 1,
                 totalFiles: totalFiles,
-                currentAssetName: spec.fileName,
+                currentAssetName: task.displayName,
                 fraction: overall,
               ),
             );
@@ -117,34 +188,54 @@ class AssetBootstrap {
           AssetBootstrapProgress(
             currentIndex: i + 1,
             totalFiles: totalFiles,
-            currentAssetName: spec.fileName,
+            currentAssetName: task.displayName,
             fraction: ((i + 1) / totalFiles).clamp(0.0, 1.0),
           ),
         );
       }
     }
 
-    if (anyCopied || !versionMatches) {
-      await versionMarker.writeAsString(assetsVersion, flush: true);
+    if (copiedCorpus || !corpusVersionCurrent) {
+      await corpusVersionFile.writeAsString(corpusSpec.version, flush: true);
+    }
+    if (copiedEncoder || !encoderVersionCurrent) {
+      await encoderVersionFile.writeAsString(encoderSpec.version, flush: true);
     }
 
     final paths = EngineArtifactPaths(
-      dbPath: p.join(docsDir.path, 'canon.db'),
-      binPath: p.join(docsDir.path, 'embeddings_384_f32.bin'),
-      onnxPath: p.join(docsDir.path, 'encoder_int8.onnx'),
-      tokenizerPath: p.join(docsDir.path, 'tokenizer.json'),
+      dbPath: dbFile.path,
+      binPath: binFile.path,
+      onnxPath: onnxFile.path,
+      tokenizerPath: tokFile.path,
     );
     paths.validateOrThrow();
     return paths;
   }
 
-  Future<bool> _isVersionCurrent(File versionMarker) async {
+  /// Construye rutas validadas para un pack externo ya alojado en disco
+  /// reutilizando el encoder compartido.
+  Future<EngineArtifactPaths> resolveExternalCorpus({
+    required String dbPath,
+    required String binPath,
+  }) async {
+    final paths = await ensureReady();
+    final customPaths = EngineArtifactPaths(
+      dbPath: dbPath,
+      binPath: binPath,
+      onnxPath: paths.onnxPath,
+      tokenizerPath: paths.tokenizerPath,
+    );
+    customPaths.validateOrThrow();
+    return customPaths;
+  }
+
+  Future<bool> _isVersionCurrent(File versionMarker, String expectedVersion) async {
     if (!await versionMarker.exists()) {
       return false;
     }
     try {
       final stored = (await versionMarker.readAsString()).trim();
-      return stored == assetsVersion;
+      return stored == expectedVersion;
     } catch (_) {
       return false;
     }
@@ -153,7 +244,7 @@ class AssetBootstrap {
   /// Escribe el asset de forma atómica (`.tmp` -> `rename`) en bloques de memoria
   /// mediante vistas zero-copy (`Uint8List.sublistView`) y `File.openWrite`.
   Future<void> _copyAssetInChunks({
-    required _AssetSpec spec,
+    required String assetKey,
     required File targetFile,
     required void Function(double fraction) onChunkProgress,
   }) async {
@@ -164,19 +255,17 @@ class AssetBootstrap {
 
     final ByteData data;
     try {
-      data = await _bundle.load(spec.assetKey);
+      data = await _bundle.load(assetKey);
     } catch (err) {
       throw EngineException(
-        'No se encontró el asset empaquetado "${spec.assetKey}".',
+        'No se encontró el asset empaquetado "$assetKey".',
         cause: err.toString(),
       );
     }
 
     final totalBytes = data.lengthInBytes;
     if (totalBytes <= 0) {
-      throw EngineException(
-        'El asset "${spec.assetKey}" está vacío (0 bytes).',
-      );
+      throw EngineException('El asset "$assetKey" está vacío (0 bytes).');
     }
 
     final sink = tempFile.openWrite(mode: FileMode.writeOnly);
@@ -209,7 +298,7 @@ class AssetBootstrap {
 
       if (await tempFile.length() != totalBytes) {
         throw EngineException(
-          'Tamaño inconsistente al extraer ${spec.fileName}.',
+          'Tamaño inconsistente al extraer ${p.basename(targetFile.path)}.',
         );
       }
 

@@ -10,9 +10,11 @@ class SearchScreen extends StatefulWidget {
   const SearchScreen({
     super.key,
     required this.engineWorker,
+    required this.corpusInfo,
   });
 
   final EngineWorker engineWorker;
+  final CorpusInfo corpusInfo;
 
   @override
   State<SearchScreen> createState() => _SearchScreenState();
@@ -25,13 +27,6 @@ class _SearchScreenState extends State<SearchScreen> {
   static const Color _textPrimary = Color(0xFFE0E0E0);
   static const Color _textMuted = Color(0xFF969188);
   static const Color _accentStone = Color(0xFFC8BFA8);
-
-  static const List<String> _contemplativeSeeds = <String>[
-    'ansiedad y temor por el futuro',
-    'cansancio del alma y falta de paz',
-    'gratitud en medio de la prueba',
-    'necesito perdonar',
-  ];
 
   final TextEditingController _queryController = TextEditingController();
   final FocusNode _inputFocusNode = FocusNode();
@@ -154,6 +149,8 @@ class _SearchScreenState extends State<SearchScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final info = widget.corpusInfo;
+
     return Scaffold(
       backgroundColor: _bgColor,
       body: SafeArea(
@@ -166,9 +163,9 @@ class _SearchScreenState extends State<SearchScreen> {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: <Widget>[
                   const SizedBox(height: 12),
-                  const Text(
-                    'QUIETUD · RVR 1909',
-                    style: TextStyle(
+                  Text(
+                    info.title.toUpperCase(),
+                    style: const TextStyle(
                       color: _textMuted,
                       fontSize: 11,
                       letterSpacing: 2.4,
@@ -176,9 +173,9 @@ class _SearchScreenState extends State<SearchScreen> {
                     ),
                   ),
                   const SizedBox(height: 10),
-                  const Text(
-                    '¿Qué habita en tu ánimo hoy?',
-                    style: TextStyle(
+                  Text(
+                    info.subtitle,
+                    style: const TextStyle(
                       fontFamily: 'serif',
                       color: _textPrimary,
                       fontSize: 24,
@@ -187,9 +184,9 @@ class _SearchScreenState extends State<SearchScreen> {
                     ),
                   ),
                   const SizedBox(height: 22),
-                  _buildSearchBar(),
+                  _buildSearchBar(info.searchHint),
                   const SizedBox(height: 24),
-                  Expanded(child: _buildBody()),
+                  Expanded(child: _buildBody(info)),
                 ],
               ),
             ),
@@ -199,7 +196,7 @@ class _SearchScreenState extends State<SearchScreen> {
     );
   }
 
-  Widget _buildSearchBar() {
+  Widget _buildSearchBar(String searchHint) {
     final hasText = _queryController.text.isNotEmpty;
 
     return Container(
@@ -226,16 +223,16 @@ class _SearchScreenState extends State<SearchScreen> {
                 height: 1.45,
               ),
               cursorColor: _accentStone,
-              decoration: const InputDecoration(
-                hintText: 'Describe una emoción, carga o inquietud...',
-                hintStyle: TextStyle(
+              decoration: InputDecoration(
+                hintText: searchHint,
+                hintStyle: const TextStyle(
                   fontFamily: 'serif',
                   color: Color(0xFF6B6760),
                   fontSize: 15,
                 ),
                 border: InputBorder.none,
                 isDense: true,
-                contentPadding: EdgeInsets.symmetric(vertical: 10),
+                contentPadding: const EdgeInsets.symmetric(vertical: 10),
               ),
               onSubmitted: (_) => _executeSearch(),
             ),
@@ -270,11 +267,11 @@ class _SearchScreenState extends State<SearchScreen> {
     );
   }
 
-  Widget _buildBody() {
+  Widget _buildBody(CorpusInfo info) {
     if (_isSearching && _hits.isEmpty) {
       return const Center(
         child: Text(
-          'Buscando en el canon...',
+          'Buscando en el corpus...',
           style: TextStyle(
             fontFamily: 'serif',
             color: _textMuted,
@@ -318,48 +315,52 @@ class _SearchScreenState extends State<SearchScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
-            const Text(
-              'Algunas inquietudes frecuentes',
-              style: TextStyle(
-                color: _textMuted,
-                fontSize: 12,
-                letterSpacing: 0.8,
+            if (info.sampleQueries.isNotEmpty) ...<Widget>[
+              const Text(
+                'Algunas consultas frecuentes',
+                style: TextStyle(
+                  color: _textMuted,
+                  fontSize: 12,
+                  letterSpacing: 0.8,
+                ),
               ),
-            ),
-            const SizedBox(height: 12),
-            Wrap(
-              spacing: 10,
-              runSpacing: 10,
-              children: _contemplativeSeeds.map((seed) {
-                return InkWell(
-                  onTap: () => _executeSearch(seed),
-                  borderRadius: BorderRadius.circular(20),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 14,
-                      vertical: 9,
-                    ),
-                    decoration: BoxDecoration(
-                      color: _surfaceColor,
-                      borderRadius: BorderRadius.circular(20),
-                      border: Border.all(color: _borderColor),
-                    ),
-                    child: Text(
-                      seed,
-                      style: const TextStyle(
-                        fontFamily: 'serif',
-                        color: _textPrimary,
-                        fontSize: 13.5,
+              const SizedBox(height: 12),
+              Wrap(
+                spacing: 10,
+                runSpacing: 10,
+                children: info.sampleQueries.map((seed) {
+                  return InkWell(
+                    onTap: () => _executeSearch(seed),
+                    borderRadius: BorderRadius.circular(20),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 14,
+                        vertical: 9,
+                      ),
+                      decoration: BoxDecoration(
+                        color: _surfaceColor,
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(color: _borderColor),
+                      ),
+                      child: Text(
+                        seed,
+                        style: const TextStyle(
+                          fontFamily: 'serif',
+                          color: _textPrimary,
+                          fontSize: 13.5,
+                        ),
                       ),
                     ),
-                  ),
-                );
-              }).toList(growable: false),
-            ),
-            const SizedBox(height: 36),
-            const Text(
-              '100 % local y sin conexión. Tus consultas nunca abandonan este dispositivo.',
-              style: TextStyle(
+                  );
+                }).toList(growable: false),
+              ),
+              const SizedBox(height: 36),
+            ],
+            Text(
+              info.rowCount > 0
+                  ? '100 % local y sin conexión · ${info.rowCount} pasajes indexados.'
+                  : '100 % local y sin conexión. Tus consultas nunca abandonan este dispositivo.',
+              style: const TextStyle(
                 color: Color(0xFF63605A),
                 fontSize: 12,
                 height: 1.5,
@@ -388,7 +389,7 @@ class _SearchScreenState extends State<SearchScreen> {
       separatorBuilder: (_, __) => const SizedBox(height: 14),
       itemBuilder: (context, index) {
         final hit = _hits[index];
-        return _VerseHitCard(
+        return _PassageHitCard(
           hit: hit,
           onTap: () => _openMeditation(hit),
         );
@@ -397,8 +398,8 @@ class _SearchScreenState extends State<SearchScreen> {
   }
 }
 
-class _VerseHitCard extends StatelessWidget {
-  const _VerseHitCard({
+class _PassageHitCard extends StatelessWidget {
+  const _PassageHitCard({
     required this.hit,
     required this.onTap,
   });
@@ -408,6 +409,7 @@ class _VerseHitCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final passage = hit.passage;
     final relevance = hit.normalizedRelevance;
     final relevancePercent = (relevance * 100).round();
 
@@ -432,7 +434,7 @@ class _VerseHitCard extends StatelessWidget {
                 children: <Widget>[
                   Expanded(
                     child: Text(
-                      hit.verse.reference,
+                      passage.title,
                       style: const TextStyle(
                         fontFamily: 'serif',
                         color: Color(0xFFC8BFA8),
@@ -452,9 +454,20 @@ class _VerseHitCard extends StatelessWidget {
                   ),
                 ],
               ),
+              if (passage.contextLabel.isNotEmpty) ...<Widget>[
+                const SizedBox(height: 3),
+                Text(
+                  passage.contextLabel,
+                  style: const TextStyle(
+                    color: Color(0xFF6B6760),
+                    fontSize: 11.5,
+                    letterSpacing: 0.3,
+                  ),
+                ),
+              ],
               const SizedBox(height: 10),
               Text(
-                hit.verse.text,
+                passage.text,
                 style: const TextStyle(
                   fontFamily: 'serif',
                   color: Color(0xFFE0E0E0),
@@ -480,7 +493,7 @@ class _VerseHitCard extends StatelessWidget {
                   ),
                   const SizedBox(width: 14),
                   const Text(
-                    'Meditar',
+                    'Contemplar',
                     style: TextStyle(
                       color: Color(0xFF969188),
                       fontSize: 12,

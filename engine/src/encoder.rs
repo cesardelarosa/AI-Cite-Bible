@@ -1,5 +1,6 @@
 use ort::session::{builder::GraphOptimizationLevel, Session};
 use ort::value::Value;
+use std::env;
 use std::error::Error;
 use std::path::Path;
 use std::sync::Mutex;
@@ -11,16 +12,30 @@ pub struct OnnxEncoder {
 }
 
 impl OnnxEncoder {
-    // Inicializacion del tokenizador y sesion ONNX Runtime
+    /// Inicialización del tokenizador y sesión ONNX Runtime.
     pub fn new<P: AsRef<Path>>(onnx_path: P, tokenizer_path: P) -> Result<Self, Box<dyn Error>> {
         let tokenizer = Tokenizer::from_file(tokenizer_path)
             .map_err(|e| format!("Error cargando tokenizer: {e}"))?;
 
+        let intra_threads = env::var("ORT_INTRA_THREADS")
+            .ok()
+            .and_then(|v| v.trim().parse::<usize>().ok())
+            .filter(|&n| n > 0)
+            .unwrap_or(4);
+
+        #[cfg(target_os = "android")]
+        let env = {
+            let dylib =
+                env::var("ORT_DYLIB_PATH").unwrap_or_else(|_| "libonnxruntime.so".to_string());
+            ort::init_from(dylib)?.with_name("engine").build()?
+        };
+
+        #[cfg(not(target_os = "android"))]
         let env = ort::init().with_name("engine").build()?;
 
         let session = Session::builder(&env)?
             .with_optimization_level(GraphOptimizationLevel::Level3)?
-            .with_intra_threads(4)?
+            .with_intra_threads(intra_threads)?
             .commit_from_file(onnx_path)?;
 
         Ok(Self {
@@ -29,7 +44,7 @@ impl OnnxEncoder {
         })
     }
 
-    // Inferencia inmutable y thread-safe del modelo y extracción de vector f32
+    /// Inferencia inmutable y thread-safe del modelo con extracción del vector f32.
     pub fn encode(&self, text: &str) -> Result<Vec<f32>, Box<dyn Error>> {
         let encoding = self
             .tokenizer

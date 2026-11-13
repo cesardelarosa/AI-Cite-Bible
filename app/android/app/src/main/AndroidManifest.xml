@@ -1,6 +1,6 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <application
-        android:label="ai_bible_cite_meditation"
+        android:label="Quietud"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
         <activity

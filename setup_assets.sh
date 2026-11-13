@@ -3,10 +3,23 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-SOURCE_DB="$ROOT_DIR/data/canon.db"
-SOURCE_VECTORS="$ROOT_DIR/data/embeddings_384_f32.bin"
-SOURCE_ONNX="$ROOT_DIR/models/encoder_int8.onnx"
-SOURCE_TOKENIZER="$ROOT_DIR/models/tokenizer.json"
+SOURCE_DB="${SOURCE_DB:-$ROOT_DIR/data/canon.db}"
+SOURCE_VECTORS="${SOURCE_VECTORS:-$ROOT_DIR/data/embeddings_384_f32.bin}"
+SOURCE_ONNX="${SOURCE_ONNX:-$ROOT_DIR/models/encoder_int8.onnx}"
+SOURCE_TOKENIZER="${SOURCE_TOKENIZER:-$ROOT_DIR/models/tokenizer.json}"
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --db) SOURCE_DB="$2"; shift 2 ;;
+        --vectors) SOURCE_VECTORS="$2"; shift 2 ;;
+        --onnx) SOURCE_ONNX="$2"; shift 2 ;;
+        --tokenizer) SOURCE_TOKENIZER="$2"; shift 2 ;;
+        *)
+            echo "Uso: $0 [--db RUTA] [--vectors RUTA] [--onnx RUTA] [--tokenizer RUTA]" >&2
+            exit 1
+            ;;
+    esac
+done
 
 TARGET_DATA_DIR="$ROOT_DIR/app/assets/data"
 TARGET_MODELS_DIR="$ROOT_DIR/app/assets/models"

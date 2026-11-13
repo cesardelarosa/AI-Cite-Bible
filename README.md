@@ -1,6 +1,6 @@
-# AI-Bible-Cite-Meditation (Quietud)
+# Quietud (`AI-Bible-Cite-Meditation`)
 
-Motor offline de meditación contemplativa y búsqueda semántica dense sobre el canon bíblico de la Reina-Valera 1909 (31.102 versículos), ejecutado en cliente sin permisos de red y con latencias de inferencia inferiores a 10 ms.
+Motor offline de búsqueda semántica *dense* y meditación contemplativa basado en un **Core Citador** genérico sin permisos de red ni telemetría. Incluye por defecto el corpus canónico de la Reina-Valera 1909 (31.102 versículos) como MVP funcional.
 
 ---
 
@@ -64,12 +64,14 @@ sudo dnf install clang cmake ninja-build pkgconf-pkg-config gtk3-devel xz-devel
 
 ## 4. Estructura de Artefactos Requeridos
 
-El motor exige 4 artefactos canónicos locales que no se versionan en Git por restricciones de peso:
+El motor exige 4 artefactos canónicos locales (el modelo y los vectores quedan excluidos de Git en `.gitignore` por restricciones de tamaño):
 
-* `data/canon.db`: Base SQLite con los 31.102 versículos indexados por `row_id`.
-* `data/embeddings_384_f32.bin`: Matriz binaria contigua ($31.102 \times 384$ floats en $L_2$).
-* `models/encoder_int8.onnx`: MiniLM-L12 cuantizado a INT8 con pooling y norma embebidos.
-* `models/tokenizer.json`: Vocabulario y tokenizador de Hugging Face.
+* `data/canon.db`: Base SQLite con esquema `corpus_meta` + `passages` (31.102 filas indexadas por `row_id` en el MVP RVR1909, ~9.9 MB, incluida en el repositorio para agilizar el MVP).
+* `data/embeddings_384_f32.bin`: Matriz binaria contigua ($31.102 \times 384$ floats en $L_2$, ~46 MB).
+* `models/encoder_int8.onnx`: MiniLM-L12 cuantizado a INT8 con pooling y norma embebidos (~113 MB).
+* `models/tokenizer.json`: Vocabulario y tokenizador de Hugging Face (~17 MB).
+
+*(Los scripts en `scripts/` conservan el ETL reproducible con el que se descargó y normalizó originalmente la Reina-Valera 1909 hacia `data/bible_canonical.json`.)*
 
 ---
 
@@ -91,21 +93,20 @@ Genera la librería compartida y valida los símbolos de la C-ABI:
 ```bash
 cd engine
 cargo build --release
-nm -D --defined-only target/release/libengine.so | grep -E 'engine_(init|search|free_string|destroy)$'
+nm -D --defined-only target/release/libengine.so | grep -E 'engine_(init|corpus_info|search|free_string|destroy)$'
 cd ..
 
 ```
 
 ### Paso 3: Ejecutar en Escritorio (Linux)
 
-Lanza la aplicación enlazando la ruta dinámica de `libengine.so`:
+Lanza la aplicación compilando incrementalmente `libengine.so` y exportando `LD_LIBRARY_PATH`:
 
 ```bash
 ./run_desktop.sh
-
 ```
 
-*(Nota: En el primer arranque, la aplicación extraerá los assets a `~/Documents` mediante copias atómicas por bloques para permitir el acceso por `mmap`).*
+*(Usa `./run_desktop.sh --skip-rust` si solo modificaste código Dart. Si usas Flutter `>= 3.47.0-0.0.pre`, ejecuta `flutter analyze --no-fatal-infos` dentro de `app/` para ignorar el aviso informativo de transición a `material_ui`. En el primer arranque, la aplicación extraerá los assets a documentos locales mediante copias atómicas por bloques para habilitar `mmap`.)*
 
 ---
 
@@ -136,16 +137,72 @@ cd ..
 
 ```
 
-4. Extraer `libonnxruntime.so` oficial para `arm64-v8a` y ubicarla en:
+4. Extraer `libonnxruntime.so` oficial para `arm64-v8a` (compatible con `ort = 2.0.0-rc.15`, p. ej. desde el paquete AAR `com.microsoft.onnxruntime:onnxruntime-android` en Maven Central) y ubicarla en:
 
 ```text
 app/android/app/src/main/jniLibs/arm64-v8a/libonnxruntime.so
+```
 
+### Generación de APK Release y GitHub Releases
+
+El script automatizado [`build_android_apk.sh`](build_android_apk.sh) resuelve `ANDROID_NDK_HOME`, descarga `libonnxruntime.so` (`arm64-v8a`) compatible si aún no existe, compila `libengine.so` con alineamiento de 16 KB, valida los assets y empaqueta el APK restringido a `arm64-v8a`:
+
+1. **(Solo la primera vez, para publicar Releases reales)** Crea tu keystore y el archivo `app/android/key.properties` a partir de [`app/android/key.properties.example`](app/android/key.properties.example) (ambos están ignorados en `.gitignore`):
+
+```bash
+keytool -genkey -v -keystore app/android/app/upload-keystore.jks \
+  -keyalg RSA -keysize 2048 -validity 10000 -alias quietud
+cp app/android/key.properties.example app/android/key.properties
+```
+
+2. Compila el APK firmado de producción (o pasa `--debug-sign` para pruebas locales sin keystore):
+
+```bash
+./build_android_apk.sh
+```
+
+3. Publica el APK resultante (`app/build/app/outputs/flutter-apk/app-release.apk`, ~185 MB, dentro del límite de **2 GB por archivo** de GitHub Releases):
+
+```bash
+gh release create v0.1.0 app/build/app/outputs/flutter-apk/app-release.apk \
+  --title "Quietud v0.1.0"
 ```
 
 ---
 
-## 7. Licencia
+## 7. Reutilización como Core Citador Genérico
+
+El motor almacena los textos en un esquema genérico (`corpus_meta` + `passages`) y adapta automáticamente la interfaz desde los metadatos de la base de datos. Para indexar otro dominio (ej. filosofía, legislación, notas Markdown o CSV) sin tocar código Rust ni Flutter:
+
+```bash
+# Ejemplo A: desde una carpeta de archivos .md / .txt
+python py-scripts/adapters/from_markdown.py \
+  --input-dir ./mi_corpus_md \
+  --out ./data/custom.jsonl \
+  --collection "Marco Aurelio"
+
+# Ejemplo B: desde un archivo CSV/JSON/JSONL
+python py-scripts/adapters/from_tabular.py \
+  --input ./citas.csv \
+  --out ./data/custom.jsonl \
+  --id-col id --title-col titulo --collection-col autor --text-col texto
+
+# Construir SQLite + matriz binaria f32
+python py-scripts/build_corpus.py \
+  --input ./data/custom.jsonl \
+  --out-db ./data/custom.db \
+  --out-bin ./data/custom_f32.bin \
+  --corpus-id estoicos \
+  --title "QUIETUD · ESTOICOS" \
+  --subtitle "¿Qué buscas serenar hoy?"
+
+# Aprovisionar a Flutter (reutilizando el encoder ONNX compartido)
+./setup_assets.sh --db ./data/custom.db --vectors ./data/custom_f32.bin
+```
+
+---
+
+## 8. Licencia
 
 * **Código fuente:** GPLv3 (orientado al ecosistema de software libre y F-Droid).
 * **Corpus canónico:** Reina-Valera 1909 (Dominio Público).

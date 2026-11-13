@@ -1,0 +1,136 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  rust-engine:
+    name: Rust Engine (Test, Clippy, C-ABI)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - name: Cache Cargo dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: engine
+
+      - name: Run Rust unit tests
+        run: cargo test --manifest-path engine/Cargo.toml
+
+      - name: Run Clippy
+        run: cargo clippy --manifest-path engine/Cargo.toml --all-targets
+
+      - name: Build release shared library
+        run: cargo build --release --manifest-path engine/Cargo.toml
+
+      - name: Verify exported C-ABI symbols
+        run: |
+          nm -D --defined-only engine/target/release/libengine.so \
+            | grep -E 'engine_(init|corpus_info|search|free_string|destroy)$'
+          count="$(nm -D --defined-only engine/target/release/libengine.so | grep -Ec ' T engine_(init|corpus_info|search|free_string|destroy)$')"
+          if [ "$count" -ne 5 ]; then
+            echo "Se esperaban 5 símbolos C-ABI exportados, encontrados: $count" >&2
+            exit 1
+          fi
+
+  flutter-client:
+    name: Flutter Client (Analyze & Tests)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Flutter (stable)
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Prepare placeholder assets for pubspec verification
+        run: |
+          mkdir -p app/assets/data app/assets/models
+          cp data/canon.db app/assets/data/canon.db
+          touch \
+            app/assets/data/embeddings_384_f32.bin \
+            app/assets/models/encoder_int8.onnx \
+            app/assets/models/tokenizer.json
+
+      - name: Install Dart/Flutter dependencies
+        working-directory: app
+        run: flutter pub get
+
+      - name: Analyze Flutter code
+        working-directory: app
+        run: flutter analyze --no-fatal-infos
+
+      - name: Run Flutter unit & widget tests
+        working-directory: app
+        run: flutter test
+
+  python-pipeline:
+    name: Python Corpus Pipeline (Stdlib Smoke Tests)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Syntax check all Python scripts
+        run: python -m py_compile py-scripts/*.py py-scripts/adapters/*.py
+
+      - name: Smoke test Markdown/Tabular adapters and SQLite corpus builder
+        run: |
+          TMP_DIR="$(mktemp -d)"
+          mkdir -p "$TMP_DIR/md"
+          cat > "$TMP_DIR/md/seneca.md" <<'EOF'
+          # Carta I
+
+          Reivindícate para ti mismo y recoge el tiempo que hasta hoy se te arrebataba o escapaba.
+          EOF
+
+          python py-scripts/adapters/from_markdown.py \
+            --input-dir "$TMP_DIR/md" \
+            --out "$TMP_DIR/md.jsonl" \
+            --collection "Séneca" \
+            --min-chars 10
+
+          cat > "$TMP_DIR/quotes.csv" <<'EOF'
+          id,titulo,autor,texto
+          MA.4.3,Meditaciones IV 3,Marco Aurelio,En ninguna parte se retira el hombre con más calma que en su propia alma.
+          EOF
+
+          python py-scripts/adapters/from_tabular.py \
+            --input "$TMP_DIR/quotes.csv" \
+            --out "$TMP_DIR/csv.jsonl" \
+            --id-col id --title-col titulo --collection-col autor --text-col texto
+
+          python -c 'import sys; open(sys.argv[1], "wb").write(b"\x00" * 384 * 4)' "$TMP_DIR/fake.bin"
+
+          python py-scripts/build_corpus.py \
+            --input "$TMP_DIR/csv.jsonl" \
+            --out-db "$TMP_DIR/test.db" \
+            --out-bin "$TMP_DIR/fake.bin" \
+            --corpus-id estoicos \
+            --title "QUIETUD · ESTOICOS" \
+            --skip-embeddings
+
+          rm -rf "$TMP_DIR"
